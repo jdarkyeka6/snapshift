@@ -1,0 +1,73 @@
+name: iOS Simulator Build
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'index.html'
+      - 'capacitor.config.json'
+      - 'package.json'
+      - 'scripts/build.mjs'
+      - '.github/workflows/ios-build.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-simulator-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  simulator:
+    name: Build unsigned iOS simulator
+    runs-on: macos-26
+    timeout-minutes: 50
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+      - name: Install Capacitor
+        run: npm install --no-audit --no-fund
+      - name: Generate native iOS Xcode project
+        run: |
+          npm run build
+          npx cap add ios --packagemanager SPM
+          npx cap sync ios
+      - name: Validate bundle ID
+        run: |
+          node --input-type=module -e "import fs from 'node:fs'; const c=JSON.parse(fs.readFileSync('capacitor.config.json','utf8')); if(c.appId!=='com.jdarkyeka6.snapshift') process.exit(1); console.log(c.appName,c.appId)"
+      - name: Resolve Apple Swift packages
+        run: xcodebuild -resolvePackageDependencies -project ios/App/App.xcodeproj -scheme App
+      - name: Build simulator app without signing
+        run: |
+          xcodebuild \
+            -project ios/App/App.xcodeproj \
+            -scheme App \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build/DerivedData \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+      - name: Package generated Xcode project
+        if: success()
+        run: ditto -c -k --sequesterRsrc --keepParent ios build/SnapShift-iOS-project.zip
+      - name: Upload generated iOS project
+        if: success()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: SnapShift-iOS-Xcode-project
+          path: build/SnapShift-iOS-project.zip
+          retention-days: 14
+      - name: Upload unsigned simulator app
+        if: success()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: SnapShift-iOS-Simulator-App
+          path: build/DerivedData/Build/Products/Debug-iphonesimulator/App.app/
+          retention-days: 14
