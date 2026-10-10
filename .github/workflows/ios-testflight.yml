@@ -24,8 +24,7 @@ jobs:
         run: npm install --no-audit --no-fund
       - name: Generate native iOS app
         run: |
-          npm run build
-          npx cap add ios --packagemanager SPM
+          npm run ios:add
           npx cap sync ios
       - name: Build, sign and upload IPA
         env:

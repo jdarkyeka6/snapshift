@@ -35,8 +35,7 @@ jobs:
         run: npm install --no-audit --no-fund
       - name: Generate native iOS Xcode project
         run: |
-          npm run build
-          npx cap add ios --packagemanager SPM
+          npm run ios:add
           npx cap sync ios
       - name: Validate bundle ID
         run: |

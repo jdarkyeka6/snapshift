@@ -34,8 +34,8 @@ In GitHub repository **Settings → Secrets and variables → Actions**, set:
 
 On macOS, create base64 strings without line breaks with `base64 -i certificate.p12 | tr -d '\n'` and likewise for the profile. **Do not paste signing credentials into ChatGPT or commit them in GitHub**. Keep them in private repository Actions secrets. For increased safety, protect the optional GitHub environment named `testflight` with required reviewers.
 
-## 3. Replace the generated placeholder App Icon
-Before distributing a beta, replace Capacitor's default iOS AppIcon with a unique 1024×1024 opaque SnapShift icon. The generated native Xcode project is available from the simulator workflow artifact; for a permanent icon, add asset-generation to the project before releasing. Also test safe areas on notch/Dynamic Island phones, score persistence, touch placement, accessibility, audio, and offline behavior.
+## 3. Review the generated App Icon and test the game
+The build generates an original opaque 1024×1024 SnapShift App Icon using `scripts/generate-icon.mjs`, replacing Capacitor's default placeholder. Review it before distribution. Test safe areas on notch/Dynamic Island phones, score persistence, touch placement, accessibility, audio, and offline behavior.
 
 ## 4. Upload
 In GitHub **Actions → TestFlight Release → Run workflow**, run the manually gated upload **only when credentials and icon are configured**. The workflow attempts to archive and upload to App Store Connect. It does not publish to the App Store.

@@ -13,8 +13,9 @@ A magnetic neon block puzzle for the web and iOS.
 The [iOS Simulator Build](../../actions/workflows/ios-build.yml) GitHub workflow runs on Apple's macOS/Xcode toolchain after iOS source changes, or manually under **Actions → iOS Simulator Build → Run workflow**. It:
 1. Installs Capacitor 8 and builds the bundled web game.
 2. Generates the native iOS Xcode project using Swift Package Manager.
-3. Builds an unsigned iOS Simulator app.
-4. Uploads the generated Xcode project and simulator `.app` as GitHub Actions artifacts.
+3. Generates SnapShift's original four-colour 1024px App Icon.
+4. Builds an unsigned iOS Simulator app.
+5. Uploads the generated Xcode project and simulator `.app` as GitHub Actions artifacts.
 
 The unsigned simulator app **cannot be installed through TestFlight**.
 
