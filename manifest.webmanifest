@@ -1,0 +1,10 @@
+{
+  "name": "SnapShift",
+  "short_name": "SnapShift",
+  "description": "A neon magnetic block puzzle game",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#080e23",
+  "theme_color": "#080e23"
+}
