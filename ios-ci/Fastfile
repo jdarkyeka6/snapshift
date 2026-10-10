@@ -5,7 +5,7 @@ default_platform(:ios)
 platform :ios do
   desc "Build, safely sign and upload SnapShift"
   lane :beta do
-    missing = %w[ASC_KEY_ID ASC_ISSUER_ID ASC_KEY_CONTENT APPLE_TEAM_ID].select do |key|
+    missing = %w[ASC_KEY_ID ASC_ISSUER_ID ASC_KEY_CONTENT].select do |key|
       ENV.fetch(key, "").strip.empty?
     end
     UI.user_error!("Missing Apple secrets: #{missing.join(', ')}") unless missing.empty?
@@ -27,7 +27,6 @@ platform :ios do
       UI.user_error!("SnapShift's App Store Connect app was not found: #{APP_IDENTIFIER}")
     end
 
-    team_id = ENV.fetch("APPLE_TEAM_ID").strip
     name = "snapshift-ci"
     password = SecureRandom.hex(32)
     create_keychain(
@@ -59,6 +58,17 @@ platform :ios do
     sigh(api_key: api_key, app_identifier: APP_IDENTIFIER, force: true)
     profile = lane_context[SharedValues::SIGH_NAME].to_s
     UI.user_error!("SnapShift provisioning profile generation failed.") if profile.empty?
+    # The generated profile provides the team ID, so no fourth secret is needed.
+    require "open3"
+    require "plist"
+    profile_path = lane_context[SharedValues::SIGH_PROFILE_PATH].to_s
+    UI.user_error!("SnapShift profile path was not returned by Fastlane.") if profile_path.empty?
+    decoded, result = Open3.capture2e("security", "cms", "-D", "-i", profile_path)
+    UI.user_error!("Could not decode SnapShift's provisioning profile.") unless result.success?
+    profile_data = Plist.parse_xml(decoded)
+    team_id = Array(profile_data.fetch("TeamIdentifier", [])).first.to_s
+    UI.user_error!("Apple Team ID was not found in SnapShift's provisioning profile.") unless team_id.match?(/\A[A-Z0-9]{10}\z/)
+    UI.message("Using the Apple Developer Team ID from SnapShift's provisioning profile.")
     update_code_signing_settings(
       path: "App.xcodeproj", use_automatic_signing: false,
       team_id: team_id, code_sign_identity: "Apple Distribution",
