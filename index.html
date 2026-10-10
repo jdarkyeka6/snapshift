@@ -469,42 +469,104 @@
     const picks=options.slice(0,Math.min(10,options.length)).filter(v=>chosen.filter(s=>s.id===v.spec.id).length<2);
     return (picks.length?picks:options)[Math.floor(Math.random()*Math.min(6,(picks.length?picks:options).length))].spec;
   }
+  // The Lucky Draw engine deliberately favors *useful now*, rather than
+  // technically solvable packs that require an improbable perfect sequence.
+  // Scores are estimated from the current board, not guessed from random shape size.
+  function usefulShapesNow(state){
+    const ranking=[];
+    for(const spec of SHAPES){
+      let places=0, immediate=0, bestSetup=-Infinity;
+      for(const spot of spec.places){
+        const move=simulateMaskMove(state,spot);
+        if(!move)continue;
+        places++;
+        immediate=Math.max(immediate,move.lines);
+        const setup=potential(move.state)+move.lines*400;
+        bestSetup=Math.max(bestSetup,setup);
+      }
+      if(places)ranking.push({spec,places,immediate,bestSetup});
+    }
+    ranking.sort((a,b)=>b.immediate-a.immediate || b.bestSetup-a.bestSetup || b.places-a.places);
+    return ranking;
+  }
+  function luckChoice(options,chosen=[],range=6){
+    const unique=options.filter(x=>chosen.filter(spec=>spec.id===x.spec.id).length<2);
+    const candidates=(unique.length?unique:options).slice(0,Math.min(range,(unique.length?unique:options).length));
+    return candidates[Math.floor(Math.pow(Math.random(),1.35)*candidates.length)]?.spec || SHAPES[0];
+  }
   function refillPieces(){
     const state=maskBoard(),density=occupiedCount(state)/64;
-    // Generate *complete* possible deals and simulate different placement orders.
-    // Even under pressure the pieces remain permanent until the player uses them.
-    const help=density>.52?0.98:density>.34?.85:density>.18?.65:.22;
-    const count=density>.34?55:density>.18?36:15;
-    const base=[randomSpec(),randomSpec(),randomSpec()];
-    let viable=[],normal=null;
-    for(let t=0;t<count;t++){
+    const ranked=usefulShapesNow(state);
+    const direct=ranked.filter(x=>x.immediate>0);
+    const easy=ranked.filter(x=>x.places>=2 && x.spec.p.length<=3);
+    const friendly=ranked.filter(x=>x.places>=2 && x.spec.p.length<=5);
+    const likely=friendly.length?friendly:ranked;
+    const viable=[];
+    // More help than the old mode: rescue moves are given whenever one is found.
+    // The third piece is kept easy to position when the board is getting crowded.
+    const attempts=density>.5?48:38;
+    const horizontal3=SHAPES.find(s=>s.p.length===3&&s.high===1);
+    const horizontal5=SHAPES.find(s=>s.p.length===5&&s.high===1);
+    const vertical3=SHAPES.find(s=>s.p.length===3&&s.wide===1);
+    const vertical5=SHAPES.find(s=>s.p.length===5&&s.wide===1);
+    for(let t=0;t<attempts;t++){
       let set;
-      if(t===0)set=base;
-      else if(t%4===0)set=[randomSpec(),randomSpec(),randomSpec()];
-      else if(t%4===1)set=[fillGapsWithUsefulSpecs(state,[]),randomSpec(),randomSpec()];
-      else if(t%4===2){const a=fillGapsWithUsefulSpecs(state,[]);set=[a,fillGapsWithUsefulSpecs(state,[a]),randomSpec()];}
-      else {const a=fillGapsWithUsefulSpecs(state,[]),b=fillGapsWithUsefulSpecs(state,[a]);set=[a,b,fillGapsWithUsefulSpecs(state,[a,b])];}
-      const result=assessPack(set,state,density>.32?7:4);
-      if(t===0)normal=result;
+      if(t===0 && density<.18 && horizontal3 && horizontal5){
+        // A natural 5+3 line-clear opportunity early in the game.
+        set=[horizontal5,horizontal3,luckChoice(likely)];
+      }else if(t===1 && density<.18 && vertical3 && vertical5){
+        set=[vertical5,vertical3,luckChoice(likely)];
+      }else if(direct.length && t%4!==3){
+        // Always put at least one real one-move clear in the hand when possible.
+        const a=luckChoice(direct,[],Math.min(8,direct.length));
+        const b=luckChoice((easy.length?easy:likely),[a],10);
+        const c=luckChoice(likely,[a,b],12);
+        set=t%2?[b,a,c]:[a,c,b];
+      }else if(t%4===0){
+        // Allow some larger and odd pieces, but don't make them the default.
+        set=[randomSpec(),luckChoice(likely),luckChoice(likely)];
+      }else if(t%4===1){
+        const a=luckChoice(likely);
+        set=[a,luckChoice(likely,[a]),luckChoice(easy.length?easy:likely,[a])];
+      }else if(t%4===2){
+        const a=fillGapsWithUsefulSpecs(state,[]);
+        set=[a,luckChoice(likely,[a]),luckChoice(easy.length?easy:likely,[a])];
+      }else{
+        const a=luckChoice(easy.length?easy:likely);
+        const b=luckChoice(likely,[a]);
+        set=[a,b,fillGapsWithUsefulSpecs(state,[a,b])];
+      }
+      // Invalid hands don't become a 'lucky' deal, even if their first piece fits.
+      const result=assessPack(set,state,density>.32?8:5);
       if(!result.finish)continue;
-      const small=set.filter(s=>s.p.length<=2).length;
-      const repeats=set.length-new Set(set.map(s=>s.id)).size;
-      const score=result.value - Math.max(0,small-1)*130 - repeats*180 + Math.random()*125;
-      viable.push({set,result,score});
+      if(direct.length && !result.directClear)continue;
+      const hard=set.filter(spec=>{
+        const options=ranked.find(v=>v.spec.id===spec.id);
+        return !options || options.places<3 || (density>.28 && spec.p.length>5);
+      }).length;
+      const tiny=set.filter(spec=>spec.p.length<=2).length;
+      const repeats=3-new Set(set.map(spec=>spec.id)).size;
+      // Actual line clears win decisively. Easy slots, multiple safe first choices
+      // and plenty of breathing room make a pack helpful in real human play.
+      const quality=result.clears*1600 + result.directClear*2600
+        +result.safeStarts*270 +result.canStart*95
+        +Math.min(600,result.value*.20)
+        -(hard*350) -(repeats*280)
+        +(density>.28 ? Math.min(2,tiny)*125 : 0)
+        +Math.random()*80;
+      viable.push({set,result,quality});
     }
-    let pack=base;
+    let pack;
     if(viable.length){
-      viable.sort((a,b)=>b.score-a.score);
-      const strong=viable.slice(0,Math.min(9,viable.length));
-      // Rescue odds increase smoothly. Choosing among good options keeps the
-      // luck from looking like a fixed sequence of tiny squares.
-      const choice=(Math.random()<help||!normal?.finish)
-        ?strong[Math.floor(Math.pow(Math.random(),1.7)*strong.length)]
-        :viable.find(v=>v.set.every((s,i)=>s===base[i]))||viable[Math.floor(Math.random()*viable.length)];
+      viable.sort((a,b)=>b.quality-a.quality);
+      // Usually take one of the very best deals. Slight variety prevents
+      // the game from looking like a row of identical rescue pieces.
+      const upper=Math.min(density>.18?3:5,viable.length);
+      const choice=viable[Math.floor(Math.pow(Math.random(),2)*upper)];
       pack=choice.set;
-    } else {
-      // Rare pathological grid: guarantee some legal pieces instead of dealing
-      // three visibly impossible shapes. A single-square piece is a valid last resort.
+    }else{
+      // In extremely fragmented boards, one-cell blocks are a legitimate rescue.
+      // Still guarantee the whole pack fits through at least one order.
       pack=[SHAPES[0],SHAPES[0],SHAPES[0]];
     }
     pieces=pack.map(pieceFromSpec);
