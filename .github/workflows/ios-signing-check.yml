@@ -1,0 +1,37 @@
+name: Fastlane Signing Configuration Check
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'ios-ci/Fastfile'
+      - 'ios-ci/Gemfile'
+      - '.github/workflows/ios-testflight.yml'
+      - '.github/workflows/ios-signing-check.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Validate Fastlane Ruby syntax
+        run: ruby -c ios-ci/Fastfile
+      - name: Verify manual-only upload and required settings
+        run: |
+          ruby -ryaml -e '
+            data = YAML.load_file(".github/workflows/ios-testflight.yml")
+            triggers = data["on"] || data[true] || {}
+            abort "TestFlight workflow must be manual-only" unless triggers.keys == ["workflow_dispatch"]
+            job = data.fetch("jobs").fetch("upload")
+            abort "TestFlight job must use manual main guard" unless job.fetch("if").include?("refs/heads/main")
+            fastfile = File.read("ios-ci/Fastfile")
+            abort "Fastlane upload step missing" unless fastfile.include?("upload_to_testflight")
+            abort "Signing scripts must not revoke certificates" if fastfile.match?(/\.delete!|revoke!|revoke\(/i)
+            puts "Manual trigger, safe signing and upload configuration validated."
+          '
